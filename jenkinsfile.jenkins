@@ -1,0 +1,94 @@
+pipeline {
+    agent {
+        label 'ssh-agent'
+        label 'ubuntu'
+    }
+    environment {
+        EKS_CLUSTER_NAME = "my-cluster"
+        AWS_REGION = "eu-west-2"
+        K8S_ENV = "production"
+        AWS_ACCOUNT_ID = "11122233334444"
+        APP_NAME = "my-nodejs-app"
+        REPO_URL = "\${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}"
+    }
+    stages {
+            stage('Delete workspace before build starts') {
+                steps{
+                    echo 'Deleting workspace'
+                    deleteDir()
+                }
+            }
+        stage('Install AWS CLI and kubectl') {
+            steps {
+                sh '''if ! which aws; then sudo apt-get update && \
+                    sudo apt-get -y install awscli; fi
+                    if ! which kubectl; then curl -LO https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl && \
+                    chmod +x ./kubectl && \
+                    sudo mv ./kubectl /usr/local/bin/kubectl; fi
+                    if ! which git; then apt-get -y install git; fi
+                    git version
+                    aws --version
+                    kubectl version
+                '''
+            }
+        }
+        stage('Checkout') {
+            steps {
+                git branch: 'main', credentialsId: 'GH-SSH'. url: 'it@github.com:vvvegero97/jenkins_sample.git'
+            }
+        }
+        stage('Install Dependencies') {
+            steps {
+                dir('app') {
+                    sh 'npm install'
+                }
+            }
+        }
+        stage('Build') {
+            environment {
+                GIT_COMMIT_HASH = sh(script: 'git rev-parse --short HEAD',returnStdout: true).trim()
+            }
+            steps {
+                dir('app') {
+                    sh 'npm run build'
+                    sh 'docker build -t \${APP_NAME}:"\${GIT_COMMIT_HASH}" .'
+                }
+                sh 'docker tag -t \${APP_NAME}:"\${GIT_COMMIT_HASH}" \${APP_NAME}:latest'
+            }
+        }
+        stage('Test') {
+            steps {
+                dir('app') {
+                    sh 'npm run test'
+                }
+            }
+        }
+        stage('Login to AWS and update kubeconfig') {
+            withCredentials([[
+                $class: 'AmazonWebServicesCredentialsBinding',
+                accessKeyVariable: 'AWS_ACCESS_KEY',
+                credentialsId: '${AWS_ACCOUNT_ID}-secret',
+                secretKeyVariable: 'AWS_SECRET_KEY'
+            ]]) 
+            sh 'aws eks update-kubeconfig --name \${EKS_CLUSTER_NAME} --region \${AWS_REGION}'
+        }
+        stage('Deploy to the EKS') {
+            steps {
+                sh 'docker tag \${APP_NAME}:"\${GIT_COMMIT_HASH}" \${REPO_URL}:"\${GIT_COMMIT_HASH}"'
+                sh 'docker rmi \${APP_NAME}:"\${GIT_COMMIT_HASH} -f'
+                sh 'docker tag \${APP_NAME}:latest \${REPO_URL}:latest'
+                sh 'docker rmi \${APP_NAME}:latest -f'
+                sh 'aws ecr get-login-password --region \${AWS_REGION} | docker login --username AWS --password-stdin \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com'
+                sh 'docker push \${REPO_URL}:latest'
+                sh 'docker push \${REPO_URL}:"\${GIT_COMMIT_HASH}"'
+                sh 'kubectl -n \${K8S_ENV} set image deployment \${APP_NAME} \${REPO_URL}:"\${GIT_COMMIT_HASH}" --record'
+                sh 'kubectl -n \${K8S_ENV} rollout status deployment \${APP_NAME}'
+            }
+        }
+        stage ('Notify') {
+            steps {
+                post { success { slackSend color: 'good', message: "Build ${BUILD_NUMBER} Succeeded" } failure { slackSend color: 'danger', message: "Build ${BUILD_NUMBER} Failed" } }
+            }
+        }
+    }
+}

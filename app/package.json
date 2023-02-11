@@ -1,0 +1,24 @@
+{
+  "name": "app",
+  "version": "1.0.0",
+  "description": "sample-webapp",
+  "main": "server.js",
+  "scripts": {
+    "test": "npm test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vvvegero97/jenkins_sample.git"
+  },
+  "keywords": [
+    "nodejs",
+    "jenkins",
+    "docker"
+  ],
+  "author": "viachaslau.viahera",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/vvvegero97/jenkins_sample/issues"
+  },
+  "homepage": "https://github.com/vvvegero97/jenkins_sample#readme"
+}
