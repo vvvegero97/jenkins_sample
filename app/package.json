@@ -4,7 +4,7 @@
   "description": "sample-webapp",
   "main": "server.js",
   "scripts": {
-    "test": "npm test"
+    "test": "test"
   },
   "repository": {
     "type": "git",

@@ -1,0 +1,1 @@
+# Sample jenkins pipeline to build, test and deploy nodeJS application to AWS EKS
